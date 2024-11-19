@@ -4,6 +4,7 @@ import requests
 import json
 import base64
 from io import BytesIO
+from PIL import Image  # Add PIL import for image processing
 
 # Add debug logging at the very start
 try:
@@ -24,28 +25,40 @@ try:
     )
 
     # Function definitions remain the same
+    def resize_image(image_file, max_size=(800, 800)):
+        """Resize image to reduce file size while maintaining aspect ratio"""
+        image = Image.open(image_file)
+        
+        # Convert RGBA to RGB if necessary
+        if image.mode == 'RGBA':
+            image = image.convert('RGB')
+        
+        # Calculate new size maintaining aspect ratio
+        ratio = min(max_size[0] / image.size[0], max_size[1] / image.size[1])
+        if ratio < 1:  # Only resize if image is larger than max_size
+            new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
+            image = image.resize(new_size, Image.Resampling.LANCZOS)
+        
+        # Save to BytesIO
+        buffered = BytesIO()
+        image.save(buffered, format="JPEG", quality=85)
+        return buffered.getvalue()
+
     def process_file_lipsync(image_file, text_prompt, voice_name="nova"):
         """Process video with Gooey.ai Lipsync using uploaded file"""
         try:
-            # Get MIME type from the uploaded file
-            mime_type = image_file.type
-            if not mime_type:
-                # Fallback MIME type based on file extension
-                if image_file.name.lower().endswith(('.png')):
-                    mime_type = 'image/png'
-                else:
-                    mime_type = 'image/jpeg'
+            # Resize image before processing
+            image_bytes = resize_image(image_file)
             
-            # Convert the uploaded file to base64
-            bytes_data = image_file.getvalue()
-            base64_image = base64.b64encode(bytes_data).decode()
+            # Convert the resized image to base64
+            base64_image = base64.b64encode(image_bytes).decode()
             
             # Create proper data URI
-            data_uri = f"data:{mime_type};base64,{base64_image}"
+            data_uri = f"data:image/jpeg;base64,{base64_image}"
             
             # Log file details (for debugging)
-            st.write(f"File type: {mime_type}")
-            st.write(f"File size: {len(bytes_data)} bytes")
+            st.write(f"Original file size: {len(image_file.getvalue())} bytes")
+            st.write(f"Resized file size: {len(image_bytes)} bytes")
             
             payload = {
                 "functions": None,
@@ -70,7 +83,7 @@ try:
                 "openai_voice_name": voice_name,
                 "openai_tts_model": "tts_1",
                 "ghana_nlp_tts_language": None,
-                "input_face": data_uri,  # Using proper data URI format
+                "input_face": data_uri,
                 "face_padding_top": 0,
                 "face_padding_bottom": 5,
                 "face_padding_left": 0,
@@ -89,7 +102,7 @@ try:
                     "Content-Type": "application/json",
                 },
                 json=payload,
-                timeout=300  # Added timeout of 5 minutes
+                timeout=300
             )
             
             # Log response details
@@ -98,9 +111,6 @@ try:
                 st.write(f"Response content: {response.text}")
             
             return response
-        except requests.exceptions.Timeout:
-            st.error("Request timed out. The server took too long to respond.")
-            return None
         except Exception as e:
             st.error(f"Error in lipsync processing: {str(e)}")
             import traceback
