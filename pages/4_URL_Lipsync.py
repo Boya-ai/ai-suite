@@ -25,7 +25,7 @@ try:
     )
 
     # Function definitions remain the same
-    def resize_image(image_file, max_size=(800, 800)):
+    def resize_image(image_file, max_size=(400, 400)):
         """Resize image to reduce file size while maintaining aspect ratio"""
         image = Image.open(image_file)
         
@@ -35,14 +35,30 @@ try:
         
         # Calculate new size maintaining aspect ratio
         ratio = min(max_size[0] / image.size[0], max_size[1] / image.size[1])
-        if ratio < 1:  # Only resize if image is larger than max_size
+        new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
+        image = image.resize(new_size, Image.Resampling.LANCZOS)
+        
+        # Save to BytesIO with higher compression
+        buffered = BytesIO()
+        image.save(buffered, format="JPEG", quality=60)
+        
+        # Check if the base64 string would be too long
+        result = buffered.getvalue()
+        base64_length = len(base64.b64encode(result).decode())
+        
+        # If still too large, reduce further
+        if base64_length > 2000:  # Giving some buffer below 2083 limit
+            # Try with even smaller size and quality
+            max_size = (200, 200)
+            ratio = min(max_size[0] / image.size[0], max_size[1] / image.size[1])
             new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
             image = image.resize(new_size, Image.Resampling.LANCZOS)
+            
+            buffered = BytesIO()
+            image.save(buffered, format="JPEG", quality=50)
+            result = buffered.getvalue()
         
-        # Save to BytesIO
-        buffered = BytesIO()
-        image.save(buffered, format="JPEG", quality=85)
-        return buffered.getvalue()
+        return result
 
     def process_file_lipsync(image_file, text_prompt, voice_name="nova"):
         """Process video with Gooey.ai Lipsync using uploaded file"""
@@ -59,6 +75,7 @@ try:
             # Log file details (for debugging)
             st.write(f"Original file size: {len(image_file.getvalue())} bytes")
             st.write(f"Resized file size: {len(image_bytes)} bytes")
+            st.write(f"Base64 string length: {len(data_uri)} characters")
             
             payload = {
                 "functions": None,
