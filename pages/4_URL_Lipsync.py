@@ -59,22 +59,47 @@ try:
         image.save(buffered, format="JPEG", quality=10, optimize=True)
         return buffered.getvalue()
 
+    def upload_image_to_gooey(image_bytes):
+        """Upload image to Gooey.ai and get URL"""
+        try:
+            # Create file-like object for requests
+            files = {
+                'file': ('image.jpg', image_bytes, 'image/jpeg')
+            }
+            
+            # Upload to Gooey.ai file upload endpoint
+            upload_response = requests.post(
+                "https://api.gooey.ai/v2/upload",
+                headers={
+                    "Authorization": f"bearer {st.secrets['GOOEY_API_KEY']}",
+                },
+                files=files
+            )
+            
+            if upload_response.ok:
+                result = upload_response.json()
+                return result.get('url')
+            else:
+                st.error(f"Failed to upload image: {upload_response.text}")
+                return None
+        except Exception as e:
+            st.error(f"Error uploading image: {str(e)}")
+            return None
+
     def process_file_lipsync(image_file, text_prompt, voice_name="nova"):
         """Process video with Gooey.ai Lipsync using uploaded file"""
         try:
             # Resize image before processing
             image_bytes = resize_image(image_file)
             
-            # Convert the resized image to base64
-            base64_image = base64.b64encode(image_bytes).decode()
+            # Upload image and get URL
+            image_url = upload_image_to_gooey(image_bytes)
             
-            # Create proper data URI
-            data_uri = f"data:image/jpeg;base64,{base64_image}"
+            if not image_url:
+                st.error("Failed to upload image")
+                return None
             
-            # Log file details (for debugging)
-            st.write(f"Original file size: {len(image_file.getvalue())} bytes")
-            st.write(f"Resized file size: {len(image_bytes)} bytes")
-            st.write(f"Base64 string length: {len(data_uri)} characters")
+            st.write(f"Image uploaded successfully: {image_url}")
             
             payload = {
                 "functions": None,
@@ -99,7 +124,7 @@ try:
                 "openai_voice_name": voice_name,
                 "openai_tts_model": "tts_1",
                 "ghana_nlp_tts_language": None,
-                "input_face": data_uri,
+                "input_face": image_url,  # Use the uploaded image URL instead of base64
                 "face_padding_top": 0,
                 "face_padding_bottom": 5,
                 "face_padding_left": 0,
