@@ -25,7 +25,7 @@ try:
     )
 
     # Function definitions remain the same
-    def resize_image(image_file, max_size=(400, 400)):
+    def resize_image(image_file, max_size=(200, 200)):
         """Resize image to reduce file size while maintaining aspect ratio"""
         image = Image.open(image_file)
         
@@ -38,27 +38,26 @@ try:
         new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
         image = image.resize(new_size, Image.Resampling.LANCZOS)
         
-        # Save to BytesIO with higher compression
-        buffered = BytesIO()
-        image.save(buffered, format="JPEG", quality=60)
-        
-        # Check if the base64 string would be too long
-        result = buffered.getvalue()
-        base64_length = len(base64.b64encode(result).decode())
-        
-        # If still too large, reduce further
-        if base64_length > 2000:  # Giving some buffer below 2083 limit
-            # Try with even smaller size and quality
-            max_size = (200, 200)
-            ratio = min(max_size[0] / image.size[0], max_size[1] / image.size[1])
-            new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
-            image = image.resize(new_size, Image.Resampling.LANCZOS)
-            
+        # Try progressively lower quality until we get a small enough base64 string
+        for quality in [50, 30, 20, 10]:  # Start with quality=50, go down if needed
             buffered = BytesIO()
-            image.save(buffered, format="JPEG", quality=50)
+            image.save(buffered, format="JPEG", quality=quality, optimize=True)  # Added optimize=True
             result = buffered.getvalue()
+            
+            # Check base64 string length
+            data_uri = f"data:image/jpeg;base64,{base64.b64encode(result).decode()}"
+            if len(data_uri) <= 2000:  # Give some buffer below 2083 limit
+                return result
+            
+        # If we still haven't gotten a small enough image, reduce size further
+        max_size = (100, 100)  # Last resort: tiny image
+        ratio = min(max_size[0] / image.size[0], max_size[1] / image.size[1])
+        new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
+        image = image.resize(new_size, Image.Resampling.LANCZOS)
         
-        return result
+        buffered = BytesIO()
+        image.save(buffered, format="JPEG", quality=10, optimize=True)
+        return buffered.getvalue()
 
     def process_file_lipsync(image_file, text_prompt, voice_name="nova"):
         """Process video with Gooey.ai Lipsync using uploaded file"""
