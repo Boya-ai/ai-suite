@@ -1,16 +1,25 @@
-import streamlit as st
-import os
-import requests
-import json
-import base64
-from io import BytesIO
-
 def process_file_lipsync(image_file, text_prompt, voice_name="nova"):
     """Process video with Gooey.ai Lipsync using uploaded file"""
     try:
+        # Get MIME type from the uploaded file
+        mime_type = image_file.type
+        if not mime_type:
+            # Fallback MIME type based on file extension
+            if image_file.name.lower().endswith(('.png')):
+                mime_type = 'image/png'
+            else:
+                mime_type = 'image/jpeg'
+        
         # Convert the uploaded file to base64
         bytes_data = image_file.getvalue()
         base64_image = base64.b64encode(bytes_data).decode()
+        
+        # Create proper data URI
+        data_uri = f"data:{mime_type};base64,{base64_image}"
+        
+        # Log file details (for debugging)
+        st.write(f"File type: {mime_type}")
+        st.write(f"File size: {len(bytes_data)} bytes")
         
         payload = {
             "functions": None,
@@ -35,7 +44,7 @@ def process_file_lipsync(image_file, text_prompt, voice_name="nova"):
             "openai_voice_name": voice_name,
             "openai_tts_model": "tts_1",
             "ghana_nlp_tts_language": None,
-            "input_face": f"data:image/jpeg;base64,{base64_image}",  # Send as base64
+            "input_face": data_uri,  # Using proper data URI format
             "face_padding_top": 0,
             "face_padding_bottom": 5,
             "face_padding_left": 0,
@@ -44,132 +53,30 @@ def process_file_lipsync(image_file, text_prompt, voice_name="nova"):
             "selected_model": "Wav2Lip",
         }
 
+        # Log the API request (without sensitive data)
+        st.write("Sending request to Gooey.ai API...")
+        
         response = requests.post(
             "https://api.gooey.ai/v2/LipsyncTTS",
             headers={
-                "Authorization": "bearer " + st.secrets["GOOEY_API_KEY"],
+                "Authorization": f"bearer {st.secrets['GOOEY_API_KEY']}",
+                "Content-Type": "application/json",
             },
             json=payload,
+            timeout=300  # Added timeout of 5 minutes
         )
+        
+        # Log response details
+        st.write(f"Response status code: {response.status_code}")
+        if not response.ok:
+            st.write(f"Response content: {response.text}")
+            
         return response
+    except requests.exceptions.Timeout:
+        st.error("Request timed out. The server took too long to respond.")
+        return None
     except Exception as e:
         st.error(f"Error in lipsync processing: {str(e)}")
+        import traceback
+        st.error(f"Full error: {traceback.format_exc()}")
         return None
-
-def download_video(url):
-    """Download video from URL and return as bytes"""
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.content
-    except Exception as e:
-        st.error(f"Error downloading video: {str(e)}")
-        return None
-
-# Set page configuration
-st.set_page_config(
-    page_title="File Upload Lipsync Generator",
-    page_icon="🎭",
-    layout="wide"
-)
-
-# Main app
-st.title("File Upload Lipsync Generator")
-st.write("Generate lip-synced videos from uploaded images")
-
-# Create two columns for inputs
-col1, col2 = st.columns(2)
-
-with col1:
-    # File uploader
-    uploaded_file = st.file_uploader(
-        "Upload an image", 
-        type=['jpg', 'jpeg', 'png'],
-        help="Upload an image containing a face"
-    )
-    
-    # Preview image
-    if uploaded_file:
-        st.image(uploaded_file, caption="Preview of uploaded image")
-
-with col2:
-    # Voice selection
-    voice_options = {
-        "Nova (Female)": "nova",
-        "Alloy (Neutral)": "alloy",
-        "Echo (Male)": "echo",
-        "Fable (Male)": "fable",
-        "Onyx (Male)": "onyx",
-        "Shimmer (Female)": "shimmer"
-    }
-    selected_voice = st.selectbox("Select voice for the speech", list(voice_options.keys()))
-    
-    # Text input
-    text_prompt = st.text_area(
-        "Enter the text to be spoken",
-        value="Excited about the new innovations that AI will bring to medical research. With gooey.AI workflows, medical students will have quick summaries of all the literature reviews without any LLM hallucinations.",
-        height=150,
-        help="Enter the text that will be spoken in the video"
-    )
-
-# Process button
-if st.button("Generate Lipsync"):
-    if not uploaded_file:
-        st.warning("Please upload an image file.")
-    elif not text_prompt.strip():
-        st.warning("Please enter some text to be spoken.")
-    else:
-        with st.spinner("Processing... This may take a few minutes."):
-            response = process_file_lipsync(
-                uploaded_file,
-                text_prompt, 
-                voice_options[selected_voice]
-            )
-            
-            if response and response.ok:
-                result = response.json()
-                st.success("Processing complete!")
-                
-                # Display result details
-                with st.expander("View Processing Details"):
-                    st.json(result)
-                
-                # If the response includes a video URL, display it and enable download
-                if "output_url" in result:
-                    st.subheader("Generated Video")
-                    st.video(result["output_url"])
-                    
-                    # Download the video and create a download button
-                    video_data = download_video(result["output_url"])
-                    if video_data:
-                        st.download_button(
-                            label="Download Generated Video",
-                            data=video_data,
-                            file_name="generated_video.mp4",
-                            mime="video/mp4"
-                        )
-            else:
-                st.error("Failed to process the video. Please try again.")
-                if response:
-                    st.error(f"Error: {response.content}")
-
-# Instructions
-with st.expander("Instructions and Tips"):
-    st.markdown("""
-    ### Instructions:
-    1. Upload an image containing a clear face view
-    2. Select the desired voice for the speech
-    3. Enter the text you want the person to speak
-    4. Click 'Generate Lipsync' and wait for processing
-    5. Download or preview the generated video
-
-    ### Tips:
-    - Use images with good lighting and clear face visibility
-    - The face should be relatively front-facing
-    - For best results, use high-quality images
-    
-    ### Supported Formats:
-    - Supported image formats: JPG, PNG
-    - The image should contain a single, clear face
-    - The face should be well-lit and centered
-    """)
