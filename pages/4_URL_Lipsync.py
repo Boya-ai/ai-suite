@@ -25,12 +25,97 @@ try:
 
     # Function definitions remain the same
     def process_file_lipsync(image_file, text_prompt, voice_name="nova"):
-        # ... (rest of the function remains the same)
-        pass
+        """Process video with Gooey.ai Lipsync using uploaded file"""
+        try:
+            # Get MIME type from the uploaded file
+            mime_type = image_file.type
+            if not mime_type:
+                # Fallback MIME type based on file extension
+                if image_file.name.lower().endswith(('.png')):
+                    mime_type = 'image/png'
+                else:
+                    mime_type = 'image/jpeg'
+            
+            # Convert the uploaded file to base64
+            bytes_data = image_file.getvalue()
+            base64_image = base64.b64encode(bytes_data).decode()
+            
+            # Create proper data URI
+            data_uri = f"data:{mime_type};base64,{base64_image}"
+            
+            # Log file details (for debugging)
+            st.write(f"File type: {mime_type}")
+            st.write(f"File size: {len(bytes_data)} bytes")
+            
+            payload = {
+                "functions": None,
+                "variables": None,
+                "text_prompt": text_prompt,
+                "tts_provider": "OPEN_AI",
+                "uberduck_voice_name": "the-rock",
+                "uberduck_speaking_rate": 1,
+                "google_voice_name": "en-AU-Neural2-C",
+                "google_speaking_rate": 0.8,
+                "google_pitch": -5.25,
+                "bark_history_prompt": None,
+                "elevenlabs_voice_name": None,
+                "elevenlabs_api_key": None,
+                "elevenlabs_voice_id": "ODq5zmih8GrVes37Dizd",
+                "elevenlabs_model": "eleven_multilingual_v2",
+                "elevenlabs_stability": 0.5,
+                "elevenlabs_similarity_boost": 0.75,
+                "elevenlabs_style": 0.3,
+                "elevenlabs_speaker_boost": True,
+                "azure_voice_name": None,
+                "openai_voice_name": voice_name,
+                "openai_tts_model": "tts_1",
+                "ghana_nlp_tts_language": None,
+                "input_face": data_uri,  # Using proper data URI format
+                "face_padding_top": 0,
+                "face_padding_bottom": 5,
+                "face_padding_left": 0,
+                "face_padding_right": 0,
+                "sadtalker_settings": None,
+                "selected_model": "Wav2Lip",
+            }
+
+            # Log the API request (without sensitive data)
+            st.write("Sending request to Gooey.ai API...")
+            
+            response = requests.post(
+                "https://api.gooey.ai/v2/LipsyncTTS",
+                headers={
+                    "Authorization": f"bearer {st.secrets['GOOEY_API_KEY']}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=300  # Added timeout of 5 minutes
+            )
+            
+            # Log response details
+            st.write(f"Response status code: {response.status_code}")
+            if not response.ok:
+                st.write(f"Response content: {response.text}")
+            
+            return response
+        except requests.exceptions.Timeout:
+            st.error("Request timed out. The server took too long to respond.")
+            return None
+        except Exception as e:
+            st.error(f"Error in lipsync processing: {str(e)}")
+            import traceback
+            st.error(f"Full error: {traceback.format_exc()}")
+            return None
 
     def download_video(url):
-        # ... (rest of the function remains the same)
-        pass
+        """Download video from URL and return as bytes"""
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.content
+        except Exception as e:
+            st.error(f"Error downloading video: {str(e)}")
+            return None
 
     # Main app UI
     try:
@@ -70,8 +155,81 @@ try:
 
         # Process button
         if st.button("Generate Lipsync"):
-            # ... (rest of the button logic remains the same)
-            pass
+            st.write("Button clicked!")  # Debug message
+            
+            if not uploaded_file:
+                st.warning("Please upload an image file.")
+            elif not text_prompt.strip():
+                st.warning("Please enter some text to be spoken.")
+            else:
+                st.write("Starting processing...")  # Debug message
+                
+                # Show API key presence (without revealing the key)
+                st.write(f"API Key present: {'GOOEY_API_KEY' in st.secrets}")
+                
+                with st.spinner("Processing... This may take a few minutes."):
+                    try:
+                        # Verify API key presence
+                        if "GOOEY_API_KEY" not in st.secrets:
+                            st.error("GOOEY_API_KEY not found in secrets!")
+                            st.stop()
+                        
+                        st.write(f"Uploaded file type: {uploaded_file.type}")  # Debug message
+                        st.write(f"Text length: {len(text_prompt)}")  # Debug message
+                        st.write(f"Selected voice: {voice_options[selected_voice]}")  # Debug message
+                        
+                        response = process_file_lipsync(
+                            uploaded_file,
+                            text_prompt, 
+                            voice_options[selected_voice]
+                        )
+                        
+                        st.write("Response received!")  # Debug message
+                        
+                        if response is None:
+                            st.error("No response received from the API")
+                        elif response.ok:
+                            result = response.json()
+                            st.success("Processing complete!")
+                            
+                            # Display result details
+                            with st.expander("View Processing Details", expanded=True):  # Auto-expand for debugging
+                                st.json(result)
+                            
+                            if "output_url" in result:
+                                st.subheader("Generated Video")
+                                st.video(result["output_url"])
+                                
+                                video_data = download_video(result["output_url"])
+                                if video_data:
+                                    st.download_button(
+                                        label="Download Generated Video",
+                                        data=video_data,
+                                        file_name="generated_video.mp4",
+                                        mime="video/mp4"
+                                    )
+                            else:
+                                st.error("No output URL in the response")
+                                st.json(result)  # Show full response for debugging
+                        else:
+                            st.error(f"Failed to process the video. Status code: {response.status_code}")
+                            st.error(f"Error response: {response.text}")
+                    except Exception as e:
+                        st.error("An error occurred during processing!")  # More visible error message
+                        st.error(f"Error type: {type(e).__name__}")  # Show error type
+                        st.error(f"Error message: {str(e)}")  # Show error message
+                        import traceback
+                        st.error(f"Full error traceback:\n```\n{traceback.format_exc()}\n```")
+                        
+                        # Additional debug info
+                        st.write("Debug Information:")
+                        st.write(f"- File uploaded: {uploaded_file is not None}")
+                        if uploaded_file:
+                            st.write(f"- File name: {uploaded_file.name}")
+                            st.write(f"- File type: {uploaded_file.type}")
+                            st.write(f"- File size: {uploaded_file.size} bytes")
+                        st.write(f"- Text prompt length: {len(text_prompt)}")
+                        st.write(f"- Selected voice: {selected_voice}")
 
         # Instructions
         with st.expander("Instructions and Tips"):
@@ -110,4 +268,4 @@ except Exception as e:
         st.error("Failed to initialize the page. Please check the logs.")
         st.error(f"Error: {str(e)}")
     except:
-        pass
+        pass 
