@@ -1,8 +1,10 @@
-streamlit
+streamlit==1.40.1
 openai>=1.0.0
 transformers
-torch --index-url https://download.pytorch.org/whl/cpu
-torchaudio --index-url https://download.pytorch.org/whl/cpu
+torch
+torchaudio
 soundfile
 numpy
 scipy
+requests
+python-dotenv
