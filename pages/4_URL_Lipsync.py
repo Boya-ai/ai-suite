@@ -2,10 +2,16 @@ import streamlit as st
 import os
 import requests
 import json
+import base64
+from io import BytesIO
 
-def process_url_lipsync(image_url, text_prompt, voice_name="nova"):
-    """Process video with Gooey.ai Lipsync using URL"""
+def process_file_lipsync(image_file, text_prompt, voice_name="nova"):
+    """Process video with Gooey.ai Lipsync using uploaded file"""
     try:
+        # Convert the uploaded file to base64
+        bytes_data = image_file.getvalue()
+        base64_image = base64.b64encode(bytes_data).decode()
+        
         payload = {
             "functions": None,
             "variables": None,
@@ -29,7 +35,7 @@ def process_url_lipsync(image_url, text_prompt, voice_name="nova"):
             "openai_voice_name": voice_name,
             "openai_tts_model": "tts_1",
             "ghana_nlp_tts_language": None,
-            "input_face": image_url,
+            "input_face": f"data:image/jpeg;base64,{base64_image}",  # Send as base64
             "face_padding_top": 0,
             "face_padding_bottom": 5,
             "face_padding_left": 0,
@@ -50,31 +56,41 @@ def process_url_lipsync(image_url, text_prompt, voice_name="nova"):
         st.error(f"Error in lipsync processing: {str(e)}")
         return None
 
+def download_video(url):
+    """Download video from URL and return as bytes"""
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        return response.content
+    except Exception as e:
+        st.error(f"Error downloading video: {str(e)}")
+        return None
+
 # Set page configuration
 st.set_page_config(
-    page_title="URL-based Lipsync Generator",
+    page_title="File Upload Lipsync Generator",
     page_icon="🎭",
     layout="wide"
 )
 
 # Main app
-st.title("URL-based Lipsync Generator")
-st.write("Generate lip-synced videos from image URLs")
+st.title("File Upload Lipsync Generator")
+st.write("Generate lip-synced videos from uploaded images")
 
 # Create two columns for inputs
 col1, col2 = st.columns(2)
 
 with col1:
-    # Image URL input
-    image_url = st.text_input(
-        "Enter image URL", 
-        value="https://storage.googleapis.com/dara-c1b52.appspot.com/daras_ai/media/3ac6a436-a5c4-11ef-8ab0-02420a00015a/kessem%20A%20PixarDisney%2011.jpg",
-        help="Enter the URL of an image containing a face"
+    # File uploader
+    uploaded_file = st.file_uploader(
+        "Upload an image", 
+        type=['jpg', 'jpeg', 'png'],
+        help="Upload an image containing a face"
     )
     
     # Preview image
-    if image_url:
-        st.image(image_url, caption="Preview of input image")
+    if uploaded_file:
+        st.image(uploaded_file, caption="Preview of uploaded image")
 
 with col2:
     # Voice selection
@@ -98,14 +114,14 @@ with col2:
 
 # Process button
 if st.button("Generate Lipsync"):
-    if not image_url.strip():
-        st.warning("Please enter an image URL.")
+    if not uploaded_file:
+        st.warning("Please upload an image file.")
     elif not text_prompt.strip():
         st.warning("Please enter some text to be spoken.")
     else:
         with st.spinner("Processing... This may take a few minutes."):
-            response = process_url_lipsync(
-                image_url, 
+            response = process_file_lipsync(
+                uploaded_file,
                 text_prompt, 
                 voice_options[selected_voice]
             )
@@ -118,13 +134,20 @@ if st.button("Generate Lipsync"):
                 with st.expander("View Processing Details"):
                     st.json(result)
                 
-                # If the response includes a video URL, display it
+                # If the response includes a video URL, display it and enable download
                 if "output_url" in result:
                     st.subheader("Generated Video")
                     st.video(result["output_url"])
                     
-                    # Add download button for the video
-                    st.markdown(f"[Download Generated Video]({result['output_url']})")
+                    # Download the video and create a download button
+                    video_data = download_video(result["output_url"])
+                    if video_data:
+                        st.download_button(
+                            label="Download Generated Video",
+                            data=video_data,
+                            file_name="generated_video.mp4",
+                            mime="video/mp4"
+                        )
             else:
                 st.error("Failed to process the video. Please try again.")
                 if response:
@@ -134,7 +157,7 @@ if st.button("Generate Lipsync"):
 with st.expander("Instructions and Tips"):
     st.markdown("""
     ### Instructions:
-    1. Enter the URL of an image containing a clear face view
+    1. Upload an image containing a clear face view
     2. Select the desired voice for the speech
     3. Enter the text you want the person to speak
     4. Click 'Generate Lipsync' and wait for processing
@@ -143,11 +166,10 @@ with st.expander("Instructions and Tips"):
     ### Tips:
     - Use images with good lighting and clear face visibility
     - The face should be relatively front-facing
-    - Make sure the image URL is publicly accessible
     - For best results, use high-quality images
     
     ### Supported Formats:
-    - Image URLs should point to JPG, PNG, or similar formats
+    - Supported image formats: JPG, PNG
     - The image should contain a single, clear face
     - The face should be well-lit and centered
-    """) 
+    """)
