@@ -1,3 +1,11 @@
+import streamlit as st
+import os
+import requests
+import json
+import base64
+from io import BytesIO
+
+
 def process_file_lipsync(image_file, text_prompt, voice_name="nova"):
     """Process video with Gooey.ai Lipsync using uploaded file"""
     try:
